@@ -12,11 +12,19 @@ ROOM_MAX_SIZE = 10
 ROOM_MIN_SIZE = 10
 MAX_ROOMS = 30
 
-color_void = libtcod.Color(0, 0, 0)
-color_dark_wall = libtcod.Color(25, 25, 25)
-color_dark_wall_f = libtcod.Color(50, 50, 50)
-color_dark_ground = libtcod.Color(50, 50, 50)
-color_dark_ground_f = libtcod.Color(75, 75, 75)
+bg_colors = {
+    "void": libtcod.Color(0, 0, 0),
+    "dark_wall": libtcod.Color(25, 25, 25),
+    "dark_ground": libtcod.Color(50, 50, 50),
+    }
+    
+fg_colors = {
+    "void": libtcod.Color(200, 200, 200),
+    "dark_wall": libtcod.Color(50, 50, 50),
+    "dark_ground": libtcod.Color(75, 75, 75),
+    "dark_stairs": libtcod.Color(100, 100, 75),
+    }
+    
 
 libtcod.console_set_custom_font('consolas_unicode_12x12.png', libtcod.FONT_LAYOUT_ASCII_INROW | libtcod.FONT_TYPE_GREYSCALE, nb_char_horiz=32, nb_char_vertic=64)
 
@@ -76,11 +84,15 @@ class Map:
                 (new_x, new_y) = new_room.center()
                 
                 if self.num_rooms == 0:
-                    # playerx = new_x
-                    # playery = new_y
-                    pass
+                    self.start_x = new_x
+                    self.start_y = new_y
+                else:
+                    self.join_rooms(new_room, self.rooms[-1])
+                self.end_x = new_x
+                self.end_y = new_y
+                
+                self.rooms.append(new_room)
                 self.num_rooms += 1
-                    
     
     def add_object(self, obj):
         self.objects.append(obj)
@@ -107,6 +119,16 @@ class Map:
                 if self.in_bounds(x, y):
                     self.tiles[x][y].blocked = False
                     self.tiles[x][y].block_sight = False
+
+    def join_rooms(self, room1, room2):
+        cx1, cy1 = room1.center()
+        cx2, cy2 = room2.center()
+        if libtcod.random_get_int(0, 0, 1) == 1:
+            self.create_h_tunnel(cx1, cx2, cy1)
+            self.create_v_tunnel(cx2, cy1, cy2)
+        else:
+            self.create_v_tunnel(cx1, cy1, cy2)
+            self.create_h_tunnel(cx1, cx2, cy2)
                     
     def create_h_tunnel(self, x1, x2, y):
         for x in range(min(x1, x2), max(x1, x2) + 1):
@@ -119,6 +141,14 @@ class Map:
             if self.in_bounds(x, y):
                 self.tiles[x][y].blocked = False
                 self.tiles[x][y].block_sight = False
+                
+    def find_clear_space(self):
+        if len(self.rooms) == 0:
+            return (libtcod.random_get_int(0, 0, map.width - 1),
+                    libtcod.random_get_int(0, 0, map.height - 1))
+        room = self.rooms[libtcod.random_get_int(0, 0, len(self.rooms) - 1)]
+        return (libtcod.random_get_int(0, room.x1 + 1, room.x2 - 1),
+                libtcod.random_get_int(0, room.y1 + 1, room.y2 - 1))
 
 class Screen:
     def __init__(self, map, width=SCREEN_WIDTH, height=SCREEN_HEIGHT):
@@ -129,25 +159,40 @@ class Screen:
         self.y_offset = 0
         
     def move(self, dx, dy):
-        self.x_offset += dx
-        self.y_offset += dy
+        new_x = self.x_offset + dx
+        new_y = self.y_offset + dy
+        half_width = self.width/2
+        half_height = self.height/2
+        if -half_width < new_x < self.map.width - half_width:
+            self.x_offset = new_x
+        if -half_height < new_y < self.map.height - half_height:
+            self.y_offset = new_y
         
     def display(self, con):
         for y in range(self.height):
             for x in range(self.width):
-                if map.in_bounds(x, y):
-                    wall = map.is_sightblocked(x + self.x_offset, y + self.y_offset)
-            
+                map_x, map_y = x + self.x_offset, y + self.y_offset 
+                if map.in_bounds(map_x, map_y):
+                    wall = map.is_sightblocked(map_x, map_y)
+                    
                     if wall:
-                        libtcod.console_set_char_background(con, x, y, color_dark_wall, libtcod.BKGND_SET)
-                        libtcod.console_set_default_foreground(con, color_dark_wall_f)
+                        libtcod.console_set_char_background(con, x, y, bg_colors["dark_wall"], libtcod.BKGND_SET)
+                        libtcod.console_set_default_foreground(con, fg_colors["dark_wall"])
                         libtcod.console_put_char(con, x, y, '#', libtcod.BKGND_NONE)
+                    elif map_x == map.start_x and map_y == map.start_y:
+                        libtcod.console_set_char_background(con, x, y, bg_colors["dark_ground"], libtcod.BKGND_SET)
+                        libtcod.console_set_default_foreground(con, fg_colors["dark_stairs"])
+                        libtcod.console_put_char(con, x, y, '<', libtcod.BKGND_NONE)
+                    elif map_x == map.end_x and map_y == map.end_y:
+                        libtcod.console_set_char_background(con, x, y, bg_colors["dark_ground"], libtcod.BKGND_SET)
+                        libtcod.console_set_default_foreground(con, fg_colors["dark_stairs"])
+                        libtcod.console_put_char(con, x, y, '>', libtcod.BKGND_NONE)                    
                     else:
-                        libtcod.console_set_char_background(con, x, y, color_dark_ground, libtcod.BKGND_SET)
-                        libtcod.console_set_default_foreground(con, color_dark_ground_f)
+                        libtcod.console_set_char_background(con, x, y, bg_colors["dark_ground"], libtcod.BKGND_SET)
+                        libtcod.console_set_default_foreground(con, fg_colors["dark_ground"])
                         libtcod.console_put_char(con, x, y, '.', libtcod.BKGND_NONE)
                 else:
-                    libtcod.console_set_char_background(con, x, y, color_void, libtcod.BKGND_SET)
+                    libtcod.console_set_char_background(con, x, y, bg_colors["void"], libtcod.BKGND_SET)
                     libtcod.console_put_char(con, x, y, ' ', libtcod.BKGND_NONE)
                 
         for object in map.objects:
@@ -157,12 +202,14 @@ class Screen:
         libtcod.console_flush()
         
 class Object:
-    def __init__(self, map, x=None, y=None, char=None, color=None):
+    def __init__(self, map, xy=None, x=None, y=None, char=None, color=None):
         """
         Fill with defaults
         """
         self.map = map
         map.add_object(self)
+        if xy is not None:
+            x, y = xy
         self.x = x or 0
         self.y = y or 0
         self.char = char or '?'
@@ -184,10 +231,10 @@ class Object:
         libtcod.console_put_char(con, self.x, self.y, ' ', libtcod.BKGND_NONE)
         
 map = Map()
-player = Object(map, x=25, y=23, char='@')
-ai = Object(map, x=randint(0,SCREEN_WIDTH-1), y=randint(0,SCREEN_HEIGHT-1), char='g', color=libtcod.green)
+player = Object(map, xy=(map.start_x, map.start_y), char='@')
+ai = Object(map, xy=map.find_clear_space(), char='g', color=libtcod.green)
 screen = Screen(map)
-screen.move(20, 15)
+screen.move(map.start_x - SCREEN_WIDTH/2, map.start_y - SCREEN_HEIGHT/2)
 
 def handle_keys():
     global player
