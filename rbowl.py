@@ -236,33 +236,49 @@ ai = Object(map, xy=map.find_clear_space(), char='g', color=libtcod.green)
 screen = Screen(map)
 screen.move(map.start_x - SCREEN_WIDTH/2, map.start_y - SCREEN_HEIGHT/2)
 
-def handle_keys():
-    global player
-    
-    key = libtcod.console_check_for_keypress(libtcod.KEY_PRESSED | libtcod.KEY_RELEASED)
-    
-    if key.vk == libtcod.KEY_ESCAPE:
-        return True
-    elif key.c == ord('w'):
-        screen.move(0, -1)
-    elif key.c == ord('s'):
-        screen.move(0, 1)
-    elif key.c == ord('a'):
-        screen.move(-1, 0)
-    elif key.c == ord('d'):
-        screen.move(1, 0)
+class InputHandler:
+    def __init__(self):
+        self.pressed = set()
         
-    if libtcod.console_is_key_pressed(libtcod.KEY_UP):
-        player.move(0, -1)
-    elif libtcod.console_is_key_pressed(libtcod.KEY_DOWN):
-        player.move(0, 1)
-    elif libtcod.console_is_key_pressed(libtcod.KEY_LEFT):
-        player.move(-1, 0)
-    elif libtcod.console_is_key_pressed(libtcod.KEY_RIGHT):
-        player.move(1, 0)
+    def handle_keys(self):
+        global player
+    
+        key = libtcod.console_check_for_keypress(libtcod.KEY_PRESSED | libtcod.KEY_RELEASED)
+    
+        if key.vk == libtcod.KEY_ESCAPE:
+            return True
+        elif key.vk == libtcod.KEY_CHAR:
+            if key.pressed:
+                self.pressed.add(key.c)
+            else:
+                try:
+                    self.pressed.remove(key.c)
+                except KeyError:
+                    pass
+            
+        
+        
+        if ord('w') in self.pressed:
+            screen.move(0, -1)
+        elif ord('s') in self.pressed:
+            screen.move(0, 1)
+        elif ord('a') in self.pressed:
+            screen.move(-1, 0)
+        elif ord('d') in self.pressed:
+            screen.move(1, 0)
+        
+        if libtcod.console_is_key_pressed(libtcod.KEY_UP):
+            player.move(0, -1)
+        elif libtcod.console_is_key_pressed(libtcod.KEY_DOWN):
+            player.move(0, 1)
+        elif libtcod.console_is_key_pressed(libtcod.KEY_LEFT):
+            player.move(-1, 0)
+        elif libtcod.console_is_key_pressed(libtcod.KEY_RIGHT):
+            player.move(1, 0)
     
 con = libtcod.console_new(SCREEN_WIDTH, SCREEN_HEIGHT)
 libtcod.console_set_default_foreground(con, libtcod.white)
+inputhandler = InputHandler()
 while not libtcod.console_is_window_closed():
     #libtcod.console_clear(con)
     screen.display(con)
@@ -271,7 +287,7 @@ while not libtcod.console_is_window_closed():
         obj.clear()
    
     #handle keys and exit game if needed
-    exit = handle_keys()
+    exit = inputhandler.handle_keys()
     if exit:
         break
         
