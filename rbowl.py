@@ -1,8 +1,8 @@
 import libtcod.libtcodpy as libtcod
 from random import randint
 
-SCREEN_WIDTH = 24
-SCREEN_HEIGHT = 16
+SCREEN_WIDTH = 80
+SCREEN_HEIGHT = 45
 LIMIT_FPS = 20
 
 MAP_WIDTH = 80
@@ -12,10 +12,16 @@ ROOM_MAX_SIZE = 10
 ROOM_MIN_SIZE = 10
 MAX_ROOMS = 30
 
+FOV_ALGO = libtcod.FOV_SHADOW
+FOV_LIGHT_WALLS = True
+TORCH_RADIUS = 8
+
 bg_colors = {
     "void": libtcod.Color(0, 0, 0),
     "dark_wall": libtcod.Color(25, 25, 25),
     "dark_ground": libtcod.Color(50, 50, 50),
+    "light_wall": libtcod.Color(50, 50, 25),
+    "light_ground": libtcod.Color(75, 75, 50),    
     }
     
 fg_colors = {
@@ -23,6 +29,9 @@ fg_colors = {
     "dark_wall": libtcod.Color(50, 50, 50),
     "dark_ground": libtcod.Color(75, 75, 75),
     "dark_stairs": libtcod.Color(100, 100, 75),
+    "light_wall": libtcod.Color(75, 75, 50),
+    "light_ground": libtcod.Color(100, 100, 75),
+    "light_stairs": libtcod.Color(125, 125, 75),
     }
     
 
@@ -53,6 +62,7 @@ class Tile:
     def __init__(self, blocked, block_sight=None):
         self.blocked = blocked
         self.block_sight = block_sight or blocked
+        self.explored = False
 
 class Map:
     def __init__(self, width=MAP_WIDTH, height=MAP_HEIGHT):
@@ -61,6 +71,8 @@ class Map:
         self.tiles = [[Tile(True)
                         for y in range(self.height)]
                             for x in range(self.width)]
+        self.fov_map = libtcod.map_new(self.width, self.height)
+                
         self.objects = []                            
         self.rooms = []
         self.num_rooms = 0
@@ -93,6 +105,14 @@ class Map:
                 
                 self.rooms.append(new_room)
                 self.num_rooms += 1
+                
+        for y in range(self.height):
+            for x in range(self.width):
+                libtcod.map_set_properties(self.fov_map, 
+                                           x, y, 
+                                           not self.tiles[x][y].block_sight, 
+                                           not self.tiles[x][y].blocked)
+
     
     def add_object(self, obj):
         self.objects.append(obj)
@@ -169,28 +189,60 @@ class Screen:
             self.y_offset = new_y
         
     def display(self, con):
+        global player, fov_recompute
+        if fov_recompute:
+            #recompute FOV if needed (the player moved or something)
+            fov_recompute = False
+            libtcod.map_compute_fov(self.map.fov_map, player.x, player.y, TORCH_RADIUS, FOV_LIGHT_WALLS, FOV_ALGO)
+
         for y in range(self.height):
             for x in range(self.width):
                 map_x, map_y = x + self.x_offset, y + self.y_offset 
                 if map.in_bounds(map_x, map_y):
                     wall = map.is_sightblocked(map_x, map_y)
+                    visible = libtcod.map_is_in_fov(self.map.fov_map, map_x, map_y)
                     
-                    if wall:
-                        libtcod.console_set_char_background(con, x, y, bg_colors["dark_wall"], libtcod.BKGND_SET)
-                        libtcod.console_set_default_foreground(con, fg_colors["dark_wall"])
-                        libtcod.console_put_char(con, x, y, '#', libtcod.BKGND_NONE)
-                    elif map_x == map.start_x and map_y == map.start_y:
-                        libtcod.console_set_char_background(con, x, y, bg_colors["dark_ground"], libtcod.BKGND_SET)
-                        libtcod.console_set_default_foreground(con, fg_colors["dark_stairs"])
-                        libtcod.console_put_char(con, x, y, '<', libtcod.BKGND_NONE)
-                    elif map_x == map.end_x and map_y == map.end_y:
-                        libtcod.console_set_char_background(con, x, y, bg_colors["dark_ground"], libtcod.BKGND_SET)
-                        libtcod.console_set_default_foreground(con, fg_colors["dark_stairs"])
-                        libtcod.console_put_char(con, x, y, '>', libtcod.BKGND_NONE)                    
+                    if visible:
+                        if wall:
+                            libtcod.console_set_char_background(con, x, y, bg_colors["light_wall"], libtcod.BKGND_SET)
+                            libtcod.console_set_default_foreground(con, fg_colors["light_wall"])
+                            libtcod.console_put_char(con, x, y, '#', libtcod.BKGND_NONE)
+                        elif map_x == map.start_x and map_y == map.start_y:
+                            libtcod.console_set_char_background(con, x, y, bg_colors["light_ground"], libtcod.BKGND_SET)
+                            libtcod.console_set_default_foreground(con, fg_colors["light_stairs"])
+                            libtcod.console_put_char(con, x, y, '<', libtcod.BKGND_NONE)
+                        elif map_x == map.end_x and map_y == map.end_y:
+                            libtcod.console_set_char_background(con, x, y, bg_colors["light_ground"], libtcod.BKGND_SET)
+                            libtcod.console_set_default_foreground(con, fg_colors["light_stairs"])
+                            libtcod.console_put_char(con, x, y, '>', libtcod.BKGND_NONE)                    
+                        else:
+                            libtcod.console_set_char_background(con, x, y, bg_colors["light_ground"], libtcod.BKGND_SET)
+                            libtcod.console_set_default_foreground(con, fg_colors["light_ground"])
+                            libtcod.console_put_char(con, x, y, '.', libtcod.BKGND_NONE)
+                            
+                        # TODO: Doing this here bugs it if the player's light radius is not on screen
+                        self.map.tiles[map_x][map_y].explored = True
+                    elif self.map.tiles[map_x][map_y].explored:
+                        if wall:
+                            libtcod.console_set_char_background(con, x, y, bg_colors["dark_wall"], libtcod.BKGND_SET)
+                            libtcod.console_set_default_foreground(con, fg_colors["dark_wall"])
+                            libtcod.console_put_char(con, x, y, '#', libtcod.BKGND_NONE)
+                        elif map_x == map.start_x and map_y == map.start_y:
+                            libtcod.console_set_char_background(con, x, y, bg_colors["dark_ground"], libtcod.BKGND_SET)
+                            libtcod.console_set_default_foreground(con, fg_colors["dark_stairs"])
+                            libtcod.console_put_char(con, x, y, '<', libtcod.BKGND_NONE)
+                        elif map_x == map.end_x and map_y == map.end_y:
+                            libtcod.console_set_char_background(con, x, y, bg_colors["dark_ground"], libtcod.BKGND_SET)
+                            libtcod.console_set_default_foreground(con, fg_colors["dark_stairs"])
+                            libtcod.console_put_char(con, x, y, '>', libtcod.BKGND_NONE)                    
+                        else:
+                            libtcod.console_set_char_background(con, x, y, bg_colors["dark_ground"], libtcod.BKGND_SET)
+                            libtcod.console_set_default_foreground(con, fg_colors["dark_ground"])
+                            libtcod.console_put_char(con, x, y, '.', libtcod.BKGND_NONE)
                     else:
-                        libtcod.console_set_char_background(con, x, y, bg_colors["dark_ground"], libtcod.BKGND_SET)
-                        libtcod.console_set_default_foreground(con, fg_colors["dark_ground"])
-                        libtcod.console_put_char(con, x, y, '.', libtcod.BKGND_NONE)
+                        libtcod.console_set_char_background(con, x, y, bg_colors["void"], libtcod.BKGND_SET)
+                        libtcod.console_put_char(con, x, y, ' ', libtcod.BKGND_NONE)
+
                 else:
                     libtcod.console_set_char_background(con, x, y, bg_colors["void"], libtcod.BKGND_SET)
                     libtcod.console_put_char(con, x, y, ' ', libtcod.BKGND_NONE)
@@ -216,8 +268,9 @@ class Object:
         self.color = color or libtcod.white
        
     def draw(self, con, x_off, y_off):
-        libtcod.console_set_default_foreground(con, self.color)
-        libtcod.console_put_char(con, self.x - x_off, self.y - y_off, self.char, libtcod.BKGND_NONE)
+        if libtcod.map_is_in_fov(self.map.fov_map, self.x, self.y):
+            libtcod.console_set_default_foreground(con, self.color)
+            libtcod.console_put_char(con, self.x - x_off, self.y - y_off, self.char, libtcod.BKGND_NONE)
 
     def move(self, dx, dy):
         if map.is_blocked(self.x + dx, self.y + dy):
@@ -236,13 +289,16 @@ ai = Object(map, xy=map.find_clear_space(), char='g', color=libtcod.green)
 screen = Screen(map)
 screen.move(map.start_x - SCREEN_WIDTH/2, map.start_y - SCREEN_HEIGHT/2)
 
+fov_recompute = True
+    
+
 class InputHandler:
     def __init__(self):
         self.pressed = set()
         
     def handle_keys(self):
-        global player
-    
+        global player, fov_recompute
+          
         key = libtcod.console_check_for_keypress(libtcod.KEY_PRESSED | libtcod.KEY_RELEASED)
     
         if key.vk == libtcod.KEY_ESCAPE:
@@ -269,12 +325,16 @@ class InputHandler:
         
         if libtcod.console_is_key_pressed(libtcod.KEY_UP):
             player.move(0, -1)
+            fov_recompute = True
         elif libtcod.console_is_key_pressed(libtcod.KEY_DOWN):
             player.move(0, 1)
+            fov_recompute = True
         elif libtcod.console_is_key_pressed(libtcod.KEY_LEFT):
             player.move(-1, 0)
+            fov_recompute = True
         elif libtcod.console_is_key_pressed(libtcod.KEY_RIGHT):
             player.move(1, 0)
+            fov_recompute = True
     
 con = libtcod.console_new(SCREEN_WIDTH, SCREEN_HEIGHT)
 libtcod.console_set_default_foreground(con, libtcod.white)
