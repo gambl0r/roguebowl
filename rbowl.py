@@ -12,6 +12,8 @@ ROOM_MAX_SIZE = 10
 ROOM_MIN_SIZE = 10
 MAX_ROOMS = 30
 
+MAX_ROOM_MONSTERS = 3
+
 FOV_ALGO = libtcod.FOV_SHADOW
 FOV_LIGHT_WALLS = True
 TORCH_RADIUS = 8
@@ -101,6 +103,7 @@ class Map:
             
             if not failed:
                 self.create_room(new_room)
+                self.generate_room_objects(new_room)
                 (new_x, new_y) = new_room.center()
                 
                 if self.num_rooms == 0:
@@ -131,13 +134,41 @@ class Map:
     def remove_object(self, obj):
         self.objects.remove(obj)
     
+    def generate_room_objects(self, room):
+        num_monsters = libtcod.random_get_int(0, 0, MAX_ROOM_MONSTERS)
+ 
+        for i in range(num_monsters):
+            x = libtcod.random_get_int(0, room.x1+1, room.x2-1)
+            y = libtcod.random_get_int(0, room.y1+1, room.y2-1)
+            
+            if self.is_blocked(x, y):
+                continue
+ 
+            pick = libtcod.random_get_int(0, 0, 100)
+            if  pick < 50:  
+                monster = Object(self, x, y, 'g', 'goblin', color=libtcod.green, blocks=True)
+            if pick < 80:  
+                monster = Object(self, x, y, 'o', 'orc', color=libtcod.desaturated_green, blocks=True)
+            else:
+                monster = Object(self, x, y, 'T', 'troll', color=libtcod.darker_green, blocks=True)
+ 
+            self.objects.append(monster)
+    
     def in_bounds(self, x, y):
         return ((0 <= x < self.width) and (0 <= y < self.height))
     
     def is_blocked(self, x, y):
         if not self.in_bounds(x, y):
             return True
-        return self.tiles[x][y].type.blocked
+            
+        if self.tiles[x][y].type.blocked:
+            return True
+            
+        for object in self.objects:
+            if object.blocks and object.x == x and object.y == y:
+                return True
+            
+        return False
         
     def is_sightblocked(self, x, y):
         if not self.in_bounds(x, y):
@@ -237,18 +268,18 @@ class Screen:
         libtcod.console_flush()
         
 class Object:
-    def __init__(self, map, xy=None, x=None, y=None, char=None, color=None):
+    def __init__(self, map, x, y, char, name, blocks=False, color=None):
         """
         Fill with defaults
         """
         self.map = map
+        self.name = name        
         map.add_object(self)
-        if xy is not None:
-            x, y = xy
-        self.x = x or 0
-        self.y = y or 0
-        self.char = char or '?'
+        self.x = x
+        self.y = y
+        self.char = char
         self.color = color or libtcod.white
+        self.blocks = blocks
        
     def draw(self, con, x_off, y_off):
         if libtcod.map_is_in_fov(self.map.fov_map, self.x, self.y):
@@ -267,8 +298,7 @@ class Object:
         libtcod.console_put_char(con, self.x, self.y, ' ', libtcod.BKGND_NONE)
         
 map = Map()
-player = Object(map, xy=(map.start_x, map.start_y), char='@')
-ai = Object(map, xy=map.find_clear_space(), char='g', color=libtcod.green)
+player = Object(map, map.start_x, map.start_y, '@', 'player', blocks=True)
 screen = Screen(map)
 screen.move(map.start_x - SCREEN_WIDTH/2, map.start_y - SCREEN_HEIGHT/2)
 
