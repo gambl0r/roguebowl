@@ -44,7 +44,7 @@ class Game:
                              self.map.start_x,
                              self.map.start_y, 
                              '@', 'player', blocks=True)
-        self.screen = Screen(self.map)
+        self.screen = Screen(self, self.map)
         self.screen.move(self.map.start_x - SCREEN_WIDTH/2,
                          self.map.start_y - SCREEN_HEIGHT/2)
 
@@ -52,15 +52,15 @@ class Game:
     
     
         self.con = libtcod.console_new(SCREEN_WIDTH, SCREEN_HEIGHT)
-        self.libtcod.console_set_default_foreground(self.con, libtcod.white)
+        libtcod.console_set_default_foreground(self.con, libtcod.white)
         self.pressed = set()
         
-    def run():
+    def run(self):
         while not libtcod.console_is_window_closed():
             self.screen.display(self.con)
     
             for obj in self.map.objects:
-                obj.clear()
+                obj.clear(self.con)
    
             #handle keys and exit game if needed
             action = self.handle_keys()
@@ -287,7 +287,8 @@ class Map:
                 libtcod.random_get_int(0, room.y1 + 1, room.y2 - 1))
 
 class Screen:
-    def __init__(self, map, width=SCREEN_WIDTH, height=SCREEN_HEIGHT):
+    def __init__(self, game, map, width=SCREEN_WIDTH, height=SCREEN_HEIGHT):
+        self.game = game
         self.map = map
         self.width = width
         self.height = height
@@ -305,18 +306,19 @@ class Screen:
             self.y_offset = new_y
         
     def display(self, con):
-        global player, fov_recompute
-        if fov_recompute:
+        if self.game.fov_recompute:
             #recompute FOV if needed (the player moved or something)
-            fov_recompute = False
-            libtcod.map_compute_fov(self.map.fov_map, player.x, player.y, TORCH_RADIUS, FOV_LIGHT_WALLS, FOV_ALGO)
+            self.game.fov_recompute = False
+            libtcod.map_compute_fov(self.map.fov_map, 
+                                    self.game.player.x, self.game.player.y, 
+                                    TORCH_RADIUS, FOV_LIGHT_WALLS, FOV_ALGO)
 
         for y in range(self.height):
             for x in range(self.width):
                 map_x, map_y = x + self.x_offset, y + self.y_offset 
-                if map.in_bounds(map_x, map_y):
+                if self.map.in_bounds(map_x, map_y):
                     visible = libtcod.map_is_in_fov(self.map.fov_map, map_x, map_y)
-                    tt = map.tiles[map_x][map_y].type
+                    tt = self.map.tiles[map_x][map_y].type
                     
                     if visible:
                         libtcod.console_set_char_background(con, x, y, tt.bg_color_lit, libtcod.BKGND_SET)
@@ -338,7 +340,7 @@ class Screen:
                     libtcod.console_set_char_background(con, x, y, void_color, libtcod.BKGND_SET)
                     libtcod.console_put_char(con, x, y, ' ', libtcod.BKGND_NONE)
                 
-        for object in map.objects:
+        for object in self.map.objects:
             object.draw(con, self.x_offset, self.y_offset)
         
         libtcod.console_blit(con, 0, 0, self.width, self.height, 0, 0, 0)
@@ -364,14 +366,14 @@ class Object:
             libtcod.console_put_char(con, self.x - x_off, self.y - y_off, self.char, libtcod.BKGND_NONE)
 
     def move(self, dx, dy):
-        if map.is_blocked(self.x + dx, self.y + dy):
+        if self.map.is_blocked(self.x + dx, self.y + dy):
             return
         if 0 <= self.x + dx < MAP_WIDTH:
             self.x += dx
         if 0 <= self.y + dy < MAP_HEIGHT:
             self.y += dy
         
-    def clear(self):
+    def clear(self, con):
         libtcod.console_put_char(con, self.x, self.y, ' ', libtcod.BKGND_NONE)
         
-
+Game().run()
