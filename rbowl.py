@@ -34,6 +34,83 @@ libtcod.console_set_custom_font('consolas_unicode_12x12.png', libtcod.FONT_LAYOU
 libtcod.console_init_root(SCREEN_WIDTH, SCREEN_HEIGHT, 'rbowl', False)
 libtcod.sys_set_fps(LIMIT_FPS)
 
+class Game:
+    def __init__(self):
+        self.state = 'playing'
+        self.player_action = None
+
+        self.map = Map()
+        self.player = Object(self.map, 
+                             self.map.start_x,
+                             self.map.start_y, 
+                             '@', 'player', blocks=True)
+        self.screen = Screen(self.map)
+        self.screen.move(self.map.start_x - SCREEN_WIDTH/2,
+                         self.map.start_y - SCREEN_HEIGHT/2)
+
+        self.fov_recompute = True
+    
+    
+        self.con = libtcod.console_new(SCREEN_WIDTH, SCREEN_HEIGHT)
+        self.libtcod.console_set_default_foreground(self.con, libtcod.white)
+        self.pressed = set()
+        
+    def run():
+        while not libtcod.console_is_window_closed():
+            self.screen.display(self.con)
+    
+            for obj in self.map.objects:
+                obj.clear()
+   
+            #handle keys and exit game if needed
+            action = self.handle_keys()
+            if action == 'exit':
+                break
+            
+            if action is not None:
+                pass
+                
+    def handle_keys(self):
+        key = libtcod.console_check_for_keypress(libtcod.KEY_PRESSED | libtcod.KEY_RELEASED)
+    
+        if key.vk == libtcod.KEY_ESCAPE:
+            return 'exit'
+        elif key.vk == libtcod.KEY_CHAR:
+            if key.pressed:
+                self.pressed.add(key.c)
+            else:
+                try:
+                    self.pressed.remove(key.c)
+                except KeyError:
+                    pass
+        
+        if ord('w') in self.pressed:
+            self.screen.move(0, -1)
+        elif ord('s') in self.pressed:
+            self.screen.move(0, 1)
+        elif ord('a') in self.pressed:
+            self.screen.move(-1, 0)
+        elif ord('d') in self.pressed:
+            self.screen.move(1, 0)
+        
+        if self.state == 'playing':
+            if libtcod.console_is_key_pressed(libtcod.KEY_UP):
+                self.player.move(0, -1)
+                self.fov_recompute = True
+            elif libtcod.console_is_key_pressed(libtcod.KEY_DOWN):
+                self.player.move(0, 1)
+                self.fov_recompute = True
+            elif libtcod.console_is_key_pressed(libtcod.KEY_LEFT):
+                self.player.move(-1, 0)
+                self.fov_recompute = True
+            elif libtcod.console_is_key_pressed(libtcod.KEY_RIGHT):
+                self.player.move(1, 0)
+                self.fov_recompute = True
+            else:
+                return None
+        return 'action'
+        
+        
 class Rect:
     "A rectangle on the map."
     def __init__(self, x, y, w, h):
@@ -297,68 +374,4 @@ class Object:
     def clear(self):
         libtcod.console_put_char(con, self.x, self.y, ' ', libtcod.BKGND_NONE)
         
-map = Map()
-player = Object(map, map.start_x, map.start_y, '@', 'player', blocks=True)
-screen = Screen(map)
-screen.move(map.start_x - SCREEN_WIDTH/2, map.start_y - SCREEN_HEIGHT/2)
 
-fov_recompute = True
-    
-
-class InputHandler:
-    def __init__(self):
-        self.pressed = set()
-        
-    def handle_keys(self):
-        global player, fov_recompute
-          
-        key = libtcod.console_check_for_keypress(libtcod.KEY_PRESSED | libtcod.KEY_RELEASED)
-    
-        if key.vk == libtcod.KEY_ESCAPE:
-            return True
-        elif key.vk == libtcod.KEY_CHAR:
-            if key.pressed:
-                self.pressed.add(key.c)
-            else:
-                try:
-                    self.pressed.remove(key.c)
-                except KeyError:
-                    pass
-        
-        if ord('w') in self.pressed:
-            screen.move(0, -1)
-        elif ord('s') in self.pressed:
-            screen.move(0, 1)
-        elif ord('a') in self.pressed:
-            screen.move(-1, 0)
-        elif ord('d') in self.pressed:
-            screen.move(1, 0)
-        
-        if libtcod.console_is_key_pressed(libtcod.KEY_UP):
-            player.move(0, -1)
-            fov_recompute = True
-        elif libtcod.console_is_key_pressed(libtcod.KEY_DOWN):
-            player.move(0, 1)
-            fov_recompute = True
-        elif libtcod.console_is_key_pressed(libtcod.KEY_LEFT):
-            player.move(-1, 0)
-            fov_recompute = True
-        elif libtcod.console_is_key_pressed(libtcod.KEY_RIGHT):
-            player.move(1, 0)
-            fov_recompute = True
-    
-con = libtcod.console_new(SCREEN_WIDTH, SCREEN_HEIGHT)
-libtcod.console_set_default_foreground(con, libtcod.white)
-inputhandler = InputHandler()
-while not libtcod.console_is_window_closed():
-    #libtcod.console_clear(con)
-    screen.display(con)
-    
-    for obj in map.objects:
-        obj.clear()
-   
-    #handle keys and exit game if needed
-    exit = inputhandler.handle_keys()
-    if exit:
-        break
-        
